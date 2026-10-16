@@ -1,0 +1,23 @@
+{
+  "name": "codenova-serverless-task-api",
+  "version": "1.0.0",
+  "description": "Serverless Task API (AWS Lambda / API Gateway) — CodeNova Cloud Internship Task 3",
+  "main": "src/handler.js",
+  "scripts": {
+    "start": "node local-server.js",
+    "test": "node --test",
+    "offline": "serverless offline"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  },
+  "devDependencies": {
+    "serverless": "^4.44.0",
+    "serverless-offline": "^14.8.3"
+  }
+}
