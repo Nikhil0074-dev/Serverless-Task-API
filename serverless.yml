@@ -1,0 +1,54 @@
+# Serverless Framework v3 — deploy with:  npx serverless deploy --stage dev
+service: codenova-task-api
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256            # small = stays inside the Lambda free tier
+  timeout: 10                # fail fast instead of hanging (cold-start safe)
+  architecture: arm64
+  environment:
+    TABLE_NAME: ${self:service}-${self:provider.stage}-tasks
+    ALLOWED_ORIGIN: '*'      # tighten to your front-end origin in production
+  httpApi:
+    cors:
+      allowedOrigins: ['*']
+      allowedHeaders: [Content-Type, Authorization]
+      allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      maxAge: 86400
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Scan]
+          Resource: !GetAtt TasksTable.Arn
+
+functions:
+  api:
+    handler: src/handler.handler
+    events:
+      - httpApi: { path: /health, method: GET }
+      - httpApi: { path: /tasks, method: ANY }
+      - httpApi: { path: '/tasks/{id}', method: ANY }
+
+resources:
+  Resources:
+    TasksTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        BillingMode: PAY_PER_REQUEST      # no provisioned cost when idle
+        AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
+        KeySchema: [{ AttributeName: id, KeyType: HASH }]
+
+plugins:
+  - serverless-offline
+
+package:
+  patterns:
+    - '!tests/**'
+    - '!README.md'
+    - '!local-server.js'
