@@ -5,7 +5,7 @@ const STATUSES = ['todo', 'in_progress', 'done'];
 const PRIORITIES = ['low', 'medium', 'high'];
 const LIMITS = { title: 120, description: 1000 };
 
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isPlainObject = (v) => Object.prototype.toString.call(v) === '[object Object]';
 
 function isValidDate(str) {
   if (typeof str !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(str)) return false;
@@ -58,7 +58,8 @@ function validateTask(payload, { partial = false } = {}) {
   return { valid: true, errors: [], value };
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// UUID v1-v5 pattern
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isValidId = (id) => typeof id === 'string' && UUID_RE.test(id);
 
 module.exports = { validateTask, isValidId, STATUSES, PRIORITIES, LIMITS };
