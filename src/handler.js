@@ -26,8 +26,8 @@ function parseBody(event) {
 function resolveRoute(event) {
   const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
   const rawPath = (event.rawPath || event.path || '/').replace(/\/+$/, '') || '/';
-  // strip an optional stage prefix like /dev or /prod
-  const path = rawPath.replace(/^\/(dev|prod|staging|\$default)(?=\/)/, '');
+  // strip an optional stage prefix like /dev, /prod, /qa, or /staging
+  const path = rawPath.replace(/^\/[^/]+(?=\/)/, '') || '/';
   const match = path.match(/^\/tasks(?:\/([^/]+))?$/);
   return { method, path, isTasks: !!match, id: match ? match[1] : undefined };
 }
@@ -35,28 +35,37 @@ function resolveRoute(event) {
 async function handler(event) {
   try {
     const { method, path, isTasks, id } = resolveRoute(event);
+    const isHead = method === 'HEAD';
+    const effectiveMethod = isHead ? 'GET' : method;
 
-    if (method === 'OPTIONS') return res.noContent();                 // CORS pre-flight
-    if (path === '/health' && method === 'GET') return res.ok({ status: 'healthy', time: new Date().toISOString() });
+    if (method === 'OPTIONS') return res.noContent();
+    if (path === '/health' && effectiveMethod === 'GET') {
+      const response = res.ok({ status: 'healthy', time: new Date().toISOString() });
+      return isHead ? { ...response, body: '' } : response;
+    }
     if (!isTasks) return res.notFound(`No route for ${method} ${path}`);
 
     const store = getStore();
 
     // ---- collection: /tasks ------------------------------------------------
     if (!id) {
-      if (method === 'POST') {
+      if (effectiveMethod === 'POST') {
         const body = parseBody(event);
         if (!body.ok) return res.badRequest(body.error);
         const v = validateTask(body.value);
         if (!v.valid) return res.badRequest('Validation failed', v.errors);
         const task = await store.create(v.value);
-        return res.created(task, `/tasks/${task.id}`);
+        const response = res.created(task, `/tasks/${task.id}`);
+        return isHead ? { ...response, body: '' } : response;
       }
-      if (method === 'GET') {
-        const status = event.queryStringParameters?.status;
+      if (effectiveMethod === 'GET') {
+        const status = typeof event.queryStringParameters?.status === 'string'
+          ? event.queryStringParameters.status.trim().toLowerCase()
+          : event.queryStringParameters?.status;
         if (status && !STATUSES.includes(status)) return res.badRequest(`status filter must be one of: ${STATUSES.join(', ')}`);
         const tasks = await store.list({ status });
-        return res.json(200, { data: tasks, count: tasks.length });
+        const response = res.json(200, { data: tasks, count: tasks.length });
+        return isHead ? { ...response, body: '' } : response;
       }
       return res.methodNotAllowed(method);
     }
@@ -64,17 +73,19 @@ async function handler(event) {
     // ---- item: /tasks/{id} -------------------------------------------------
     if (!isValidId(id)) return res.badRequest('Task id must be a valid UUID');
 
-    if (method === 'GET') {
+    if (effectiveMethod === 'GET') {
       const task = await store.get(id);
-      return task ? res.ok(task) : res.notFound(`Task ${id} not found`);
+      const response = task ? res.ok(task) : res.notFound(`Task ${id} not found`);
+      return isHead ? { ...response, body: '' } : response;
     }
-    if (method === 'PUT' || method === 'PATCH') {
+    if (effectiveMethod === 'PUT' || effectiveMethod === 'PATCH') {
       const body = parseBody(event);
       if (!body.ok) return res.badRequest(body.error);
       const v = validateTask(body.value, { partial: true });
       if (!v.valid) return res.badRequest('Validation failed', v.errors);
       const task = await store.update(id, v.value);
-      return task ? res.ok(task) : res.notFound(`Task ${id} not found`);
+      const response = task ? res.ok(task) : res.notFound(`Task ${id} not found`);
+      return isHead ? { ...response, body: '' } : response;
     }
     if (method === 'DELETE') {
       const removed = await store.remove(id);
