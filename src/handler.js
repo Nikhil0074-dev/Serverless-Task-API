@@ -31,7 +31,8 @@ function parseBody(event) {
 function resolveRoute(event) {
   const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
   const rawPath = (event.rawPath || event.path || '/').replace(/\/+$/, '') || '/';
-  const path = rawPath.replace(/^\/[^/]+(?=\/)/, '') || '/';
+  // strip an optional stage prefix like /dev or /prod (only known stage names)
+  const path = rawPath.replace(/^\/(?:dev|prod|staging|\$default)(?=\/)/, '');
   const match = path.match(/^\/tasks(?:\/([^/]+))?$/);
   return { method, path, isTasks: !!match, id: match ? match[1] : undefined };
 }
