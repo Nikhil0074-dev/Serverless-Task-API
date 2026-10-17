@@ -8,6 +8,11 @@ const { getStore } = require('./store');
 
 const MAX_BODY_BYTES = 64 * 1024;
 
+function normalizeStatusQuery(value) {
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value.trim().toLowerCase() : value;
+}
+
 function parseBody(event) {
   let raw = event.body;
   if (raw === undefined || raw === null || raw === '') return { ok: false, error: 'Request body is required' };
@@ -26,7 +31,6 @@ function parseBody(event) {
 function resolveRoute(event) {
   const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
   const rawPath = (event.rawPath || event.path || '/').replace(/\/+$/, '') || '/';
-  // strip an optional stage prefix like /dev, /prod, /qa, or /staging
   const path = rawPath.replace(/^\/[^/]+(?=\/)/, '') || '/';
   const match = path.match(/^\/tasks(?:\/([^/]+))?$/);
   return { method, path, isTasks: !!match, id: match ? match[1] : undefined };
@@ -59,9 +63,7 @@ async function handler(event) {
         return isHead ? { ...response, body: '' } : response;
       }
       if (effectiveMethod === 'GET') {
-        const status = typeof event.queryStringParameters?.status === 'string'
-          ? event.queryStringParameters.status.trim().toLowerCase()
-          : event.queryStringParameters?.status;
+        const status = normalizeStatusQuery(event.queryStringParameters?.status);
         if (status && !STATUSES.includes(status)) return res.badRequest(`status filter must be one of: ${STATUSES.join(', ')}`);
         const tasks = await store.list({ status });
         const response = res.json(200, { data: tasks, count: tasks.length });
