@@ -1,54 +1,107 @@
-# Serverless Framework v3 — deploy with:  npx serverless deploy --stage dev
-service: codenova-task-api
+service: serverless-task-api
 frameworkVersion: '3'
+
+plugins:
+  - serverless-offline
+
+custom:
+  # "local" stage (serverless-offline) uses a JSON file in .data/; every other stage uses DynamoDB.
+  store:
+    local: file
+    default: dynamodb
+  tableName: ${self:service}-${sls:stage}-tasks
+  corsOrigin: '*' # change to your frontend origin in production
 
 provider:
   name: aws
   runtime: nodejs20.x
-  region: ${opt:region, 'ap-south-1'}
+  region: ${opt:region, 'us-east-1'}
   stage: ${opt:stage, 'dev'}
-  memorySize: 256            # small = stays inside the Lambda free tier
-  timeout: 10                # fail fast instead of hanging (cold-start safe)
+  memorySize: 256 # more memory = more CPU = faster cold start
+  timeout: 10 # well under API Gateway's 30s limit
   architecture: arm64
   environment:
-    TABLE_NAME: ${self:service}-${self:provider.stage}-tasks
-    ALLOWED_ORIGIN: '*'      # tighten to your front-end origin in production
+    STORE: ${self:custom.store.${self:provider.stage}, self:custom.store.default}
+    TASKS_TABLE: ${self:custom.tableName}
+    CORS_ORIGIN: ${self:custom.corsOrigin}
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
   httpApi:
     cors:
-      allowedOrigins: ['*']
-      allowedHeaders: [Content-Type, Authorization]
-      allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      allowedOrigins:
+        - ${self:custom.corsOrigin}
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      allowedMethods:
+        - GET
+        - POST
+        - PATCH
+        - OPTIONS
       maxAge: 86400
   iam:
     role:
       statements:
         - Effect: Allow
-          Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:Scan]
-          Resource: !GetAtt TasksTable.Arn
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:GetItem
+            - dynamodb:UpdateItem
+            - dynamodb:Scan
+          Resource:
+            - !GetAtt TasksTable.Arn
+
+package:
+  patterns:
+    - '!tests/**'
+    - '!scripts/**'
+    - '!README.md'
+    - '!.gitignore'
+    - '!package-lock.json'
+    - '!.data/**'
+    - '!api/**'
+    - '!vercel.json'
+    - '!.vercelignore'
 
 functions:
-  api:
-    handler: src/handler.handler
+  createTask:
+    handler: src/handlers/tasks.createTask
     events:
-      - httpApi: { path: /health, method: GET }
-      - httpApi: { path: /tasks, method: ANY }
-      - httpApi: { path: '/tasks/{id}', method: ANY }
+      - httpApi:
+          method: POST
+          path: /tasks
+  listTasks:
+    handler: src/handlers/tasks.listTasks
+    events:
+      - httpApi:
+          method: GET
+          path: /tasks
+  getTask:
+    handler: src/handlers/tasks.getTask
+    events:
+      - httpApi:
+          method: GET
+          path: /tasks/{id}
+  updateTask:
+    handler: src/handlers/tasks.updateTask
+    events:
+      - httpApi:
+          method: PATCH
+          path: /tasks/{id}
 
 resources:
   Resources:
     TasksTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.TABLE_NAME}
-        BillingMode: PAY_PER_REQUEST      # no provisioned cost when idle
-        AttributeDefinitions: [{ AttributeName: id, AttributeType: S }]
-        KeySchema: [{ AttributeName: id, KeyType: HASH }]
-
-plugins:
-  - serverless-offline
-
-package:
-  patterns:
-    - '!tests/**'
-    - '!README.md'
-    - '!local-server.js'
+        TableName: ${self:custom.tableName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+  Outputs:
+    ApiBaseUrl:
+      Description: Base URL of the Task API
+      Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
